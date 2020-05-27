@@ -51,6 +51,25 @@ void Dump(const fs::path& path)
 	}
 }
 
+void PrintInclude(std::ofstream& os, Package const* package, std::unordered_set<Package const*>& processed) 
+{
+	processed.insert(package);
+	for (auto obj: package->dependencies)
+	{
+		auto dep = Package::PackageMap[obj];
+		if (processed.find(dep) != processed.end())
+		{
+			PrintInclude(os, dep, processed);
+		}
+	}
+	os << R"(#include "SDK/)" << GenerateFileName(FileContentType::Structs, *package) << "\"\n";
+	os << R"(#include "SDK/)" << GenerateFileName(FileContentType::Classes, *package) << "\"\n";
+	if (generator->ShouldGenerateFunctionParametersFile())
+	{
+		os << R"(#include "SDK/)" << GenerateFileName(FileContentType::FunctionParameters, *package) << "\"\n";
+	}
+}
+
 /// <summary>
 /// Generates the sdk header.
 /// </summary>
@@ -121,15 +140,11 @@ void SaveSDKHeader(const fs::path& path, const std::unordered_map<UEObject, bool
 	}
 
 	os << "\n";
-
-	for (auto&& package : packages)
+	
+	auto processed = std::unordered_set<Package const*>{};
+	for (auto const& package : packages)
 	{
-		os << R"(#include "SDK/)" << GenerateFileName(FileContentType::Structs, *package) << "\"\n";
-		os << R"(#include "SDK/)" << GenerateFileName(FileContentType::Classes, *package) << "\"\n";
-		if (generator->ShouldGenerateFunctionParametersFile())
-		{
-			os << R"(#include "SDK/)" << GenerateFileName(FileContentType::FunctionParameters, *package) << "\"\n";
-		}
+		PrintInclude(os, package.get(), processed);
 	}
 }
 
@@ -164,23 +179,6 @@ void ProcessPackages(const fs::path& path)
 			Package::PackageMap[obj] = package.get();
 
 			packages.emplace_back(std::move(package));
-		}
-	}
-
-	if (!packages.empty())
-	{
-		// std::sort doesn't work, so use a simple bubble sort
-		//std::sort(std::begin(packages), std::end(packages), PackageDependencyComparer());
-		const PackageDependencyComparer comparer;
-		for (auto i = 0u; i < packages.size() - 1; ++i)
-		{
-			for (auto j = 0u; j < packages.size() - i - 1; ++j)
-			{
-				if (!comparer(packages[j], packages[j + 1]))
-				{
-					std::swap(packages[j], packages[j + 1]);
-				}
-			}
 		}
 	}
 
